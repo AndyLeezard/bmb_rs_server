@@ -1,0 +1,11 @@
+[package]
+name = "bmb_rs_server"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+surrealdb = "1.0.0-beta.8"
+tungstenite = "0.18.0"
+jsonwebtoken = "8.2.0"
