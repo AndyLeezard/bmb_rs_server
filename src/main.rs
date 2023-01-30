@@ -1,59 +1,86 @@
-use std::fs;
-use std::net::TcpListener;
-use std::net::TcpStream;
-use std::io::prelude::*;
+#![allow(unused)]
+use anyhow::{anyhow, Result};
+use std::collections::BTreeMap;
+use surrealdb::sql::{thing, Datetime, Object, Thing, Value};
+use surrealdb::{Datastore, Response, Session};
 
+type DB = (Datastore, Session);
 
-fn main() {
-    let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
+#[tokio::main]
+async fn main() -> Result<()> {
+    println!("Main fn started");
+    let db: &DB = &(
+        Datastore::new("memory").await?,
+        Session::for_db("my_ns", "my_db"),
+    );
+    let (ds, ses) = db;
 
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
+    // --- Create
+    let t1 = create_task(db, "Task 01", 10).await?;
+    let t2 = create_task(db, "Task 02", 7).await?;
+    println!("{t1}, {t2}");
 
-        handle_connection(stream);
-        // println!("Connection established!");
+    // --- Merge
+    let sql = "UPDATE $th MERGE $data RETURN id";
+    let data: BTreeMap<String, Value> = [
+        ("title".into(), "Task 02 UPDATED".into()),
+        ("done".into(), true.into()),
+    ]
+    .into();
+    let vars: BTreeMap<String, Value> = [
+        ("th".into(), thing(&t2)?.into()),
+        ("data".into(), data.into()),
+    ]
+    .into();
+    ds.execute(sql, ses, Some(vars), true).await?;
+
+    // --- Delete
+    let sql = "DELETE $th";
+    let vars : BTreeMap<String, Value> = [("th".into(), thing(&t1)?.into())].into();
+    ds.execute(sql, ses, Some(vars), true).await?;
+
+    // --- Select
+    let sql = "SELECT * from task";
+    let ress = ds.execute(sql, ses, None, false).await?;
+
+    for object in into_iter_objects(ress)? {
+        println!("record {}", object?);
     }
+
+    Ok(())
 }
 
-/* 
- * stream parameter is mutable because the 'read' method takes a mutable reference.
- * When you're reading from a stream, some internal states get modified.
- */
-fn handle_connection(mut stream: TcpStream) {
-    // 1024-bytes-long buffer: large enough to store the basic request for test purposes.
-    // for production, this should be able to handle different sizes of requests.
-    let mut buffer = [0; 1024];
-    
-    // populate the buffer with data from the stream
-    stream.read(&mut buffer).unwrap();
+async fn create_task((ds, ses): &DB, title: &str, priority: i32) -> Result<String> {
+    let sql = "CREATE task CONTENT $data";
 
-    let get = b"GET / HTTP/1.1\r\n";
+    let data: BTreeMap<String, Value> = [
+        ("title".into(), title.into()),
+        ("priority".into(), priority.into()),
+    ]
+    .into();
+    let vars: BTreeMap<String, Value> = [("data".into(), data.into())].into();
 
-    let (status_line, filename) = 
-        if buffer.starts_with(get) {
-            ("HTTP/1.1 200 OK", "index.html")
-        } else {
-            ("HTTP/1.1 404 NOT FOUND", "404.html")
-        };
-    let contents = fs::read_to_string(filename).unwrap();
-    let response = format!(
-        "{}\r\nContent-Lenth: {}\r\n\r\n{}",
-        status_line,
-        contents.len(),
-        contents
-    );
-    
-    stream.write(response.as_bytes()).unwrap();
-    stream.flush().unwrap();
+    let ress = ds.execute(sql, ses, Some(vars), false).await?;
 
-    /* println!(
-        "Request: {}",
-        String::from_utf8_lossy(&buffer[..])
-    ) */
+    into_iter_objects(ress)?
+        .next()
+        .transpose()?
+        .and_then(|obj| obj.get("id").map(|id| id.to_string()))
+        .ok_or_else(|| anyhow!("No id returned."))
+}
 
-    // HTTP-Version Status-Code Reason-Phrase CRLF
-    // headers CRLF
-    // message-body
-    //
-    // ex: HTTP/1.1 200 OK\r\n\r\n
+// Returns Result<impl Iterator<Item = Result<Object>>>
+fn into_iter_objects(ress: Vec<Response>) -> Result<impl Iterator<Item = Result<Object>>> {
+    let res = ress.into_iter().next().map(|rp| rp.result).transpose()?;
+
+    match res {
+        Some(Value::Array(arr)) => {
+            let it = arr.into_iter().map(|v| match v {
+                Value::Object(object) => Ok(object),
+                _ => Err(anyhow!("A record was not an Object.")),
+            });
+            Ok(it)
+        }
+        _ => Err(anyhow!("No records found.")),
+    }
 }
