@@ -24,3 +24,7 @@ cargo run
 
 - Open two seperate browsers you can observe at the same time.
 - Connect to `http://127.0.0.1:7878/sleep` on one side (**A**), and `http://127.0.0.1:7878` on the other side (**B**). On the **B** browser, normally you should be able to see the html rendered immediately, but it takes as long as the other one with the "heavy request" (**A**), because the server is processing the previous request from **A** before handling the latest request **B**.
+
+- Now, remove the `src/main.rs` file and copy and paste the folder `src/` to replace it. Redo the same test. There should be no more waiting for the **B** Browser despite the earlier heavy request from **A**.
+
+ ![Image](/archives/basics/2-multi_threading/imgsrc/log.png?raw=true "Multi-threading (4 workers)")
