@@ -1,8 +1,21 @@
-# New Dependencies
+# New Dependencies (/single_threaded.rs)
 
 ```rust
 use std::thread;
 use std::time::Duration;
+```
+
+# extended by (src/bin/main.rs)
+```rust
+use bmb_rs_server::ThreadPool;
+```
+
+# lib dependencies (src/lib.rs)
+```rust
+use std::{
+    sync::{mpsc, Arc, Mutex},
+    thread,
+};
 ```
 
 # Challenges
