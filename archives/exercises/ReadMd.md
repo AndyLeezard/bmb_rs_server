@@ -1,0 +1,1 @@
+# Simple exercises to learn Rust.
